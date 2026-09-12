@@ -202,6 +202,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // The apex (hons.ca) now points at Cloudflare too, so it no longer needs the
+    // old origin's apex->www redirect. www is canonical: send the apex there.
+    // Exempt /.well-known so the Pages custom-domain (cert) challenge can pass.
+    if (url.hostname === "hons.ca" && !path.startsWith("/.well-known/")) {
+      return Response.redirect("https://www.hons.ca" + path + url.search, 301);
+    }
+
     // The media library is not in this deployment - it is in R2, because it is
     // ~800 MB of video and camera originals that neither the runner nor the
     // export should ever carry. Fall back to the deployed assets so the switch
