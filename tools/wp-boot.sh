@@ -53,7 +53,7 @@ define('DB_USER','root');
 define('DB_PASSWORD','root');
 define('DB_HOST','127.0.0.1');
 define('DB_CHARSET','utf8mb4');
-\$table_prefix = 'wp_';
+\$table_prefix = '${TABLE_PREFIX:-wp_}';
 
 // Behind Cloudflare the request arrives as http; without this wp-admin
 // redirect-loops trying to force https.

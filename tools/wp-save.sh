@@ -21,12 +21,12 @@ echo "  database dump: ${size} bytes"
 # A dump that lost the posts table would otherwise overwrite a good backup.
 # grep -c not -q: -q exits on the first match, gzip takes SIGPIPE, and
 # pipefail then reports the whole pipeline as failed.
-posts=$(zcat /tmp/db.sql.gz | grep -c "CREATE TABLE .wp_posts." || true)
+posts=$(zcat /tmp/db.sql.gz | grep -cE "CREATE TABLE .[A-Za-z0-9_]*posts." || true)
 if [ "${posts:-0}" -lt 1 ]; then
-  echo "REFUSING to save: the dump has no wp_posts table"
+  echo "REFUSING to save: the dump has no *_posts table"
   exit 1
 fi
-echo "  wp_posts present in dump: yes"
+echo "  posts table present in dump: yes"
 # Media goes to its own bucket with a real content type, because the Function
 # hands R2's stored metadata straight to the browser.
 r2put_media() {  # r2put_media <file> <key>

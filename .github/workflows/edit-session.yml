@@ -46,6 +46,7 @@ jobs:
       SMTP_PASS: ${{ secrets.SMTP_PASS }}
       SMTP_FROM: ${{ secrets.SMTP_FROM }}
       WP_VERSION: ${{ secrets.WP_VERSION }}
+      TABLE_PREFIX: ${{ secrets.TABLE_PREFIX }}
 
     steps:
       - uses: actions/checkout@v5
