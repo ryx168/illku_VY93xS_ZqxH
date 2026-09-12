@@ -173,7 +173,7 @@ find "$OUT" -maxdepth 1 -type f \( -name 'index.html?p=*' -o -name 'index.html%3
 rm -rf "$OUT/author"
 find "$OUT" -type f -name '*.cur.html' -delete 2>/dev/null || true
 
-# (no contact form on this site — form rewrite skipped)
+# (contact + careers forms are rewritten after asset recovery, below)
 
 pages=$(find "$OUT" -name '*.html' | wc -l)
 echo "  exported ${pages} html pages, $(find "$OUT" -type f | wc -l) files total"
@@ -285,6 +285,13 @@ if [ -s /tmp/missing.txt ]; then
   done < /tmp/missing.txt
   echo "  copied ${recovered} asset(s) the crawl missed; ${absent} genuinely absent"
 fi
+
+# WPForms (#1291 contact, #1358 careers application) submit over AJAX to
+# /wp-json + admin-ajax.php, which do not exist statically - left alone they look
+# fine and drop every enquiry/application. Rewrite them to plain POST forms that
+# _worker.js delivers (contact -> /contact-send, application -> /apply-send with
+# the resume stored in R2 and emailed to HR). Idempotent.
+python3 "$(dirname "$0")/rewrite-form.py" "$OUT"
 
 # Guard 3: every local asset a page references must exist in the export.
 # Counting pages, diffing text, even counting stylesheet LINKS all called a

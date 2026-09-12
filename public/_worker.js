@@ -185,12 +185,14 @@ ${rows || '<tr><td colspan="6">nothing recorded yet</td></tr>'}</table>
 }
 
 
+// hons.ca contact form (WPForms #1291): First/Last name, Email, Phone, Request,
+// plus a "Category" checkbox group handled separately (getAll) below.
 const FIELDS = [
-  ["your-name", "Name", true],
-  ["your-number", "Mobile number", false],
-  ["your-email", "Email", true],
-  ["your-country", "City & country", false],
-  ["your-message", "Message", true],
+  ["first-name", "First name", true],
+  ["last-name", "Last name", true],
+  ["email", "Email", true],
+  ["phone", "Phone", true],
+  ["request", "Request", false],
 ];
 
 const NL = String.fromCharCode(10);
@@ -231,8 +233,15 @@ export default {
     }
 
     if (path === "/contact-send") {
-      if (request.method !== "POST") return Response.redirect(`${url.origin}/contact/`, 303);
+      if (request.method !== "POST") return Response.redirect(`${url.origin}/contact-us/`, 303);
       return handleContact(request, env, url);
+    }
+
+    // The careers application form (WPForms #1358) carries a required resume
+    // upload, so it posts here rather than to /contact-send.
+    if (path === "/apply-send") {
+      if (request.method !== "POST") return Response.redirect(`${url.origin}/about/careers/`, 303);
+      return handleApplication(request, env, url);
     }
 
     if (path === "/__editor-log") return logPage(request, env, url);
@@ -330,6 +339,9 @@ async function handleContact(request, env, url) {
     if (required && !v) return contactResult(url, false, `${label} is required.`);
     data[label] = v;
   }
+  // "Category" is a checkbox group - a person can tick more than one.
+  const cats = f.getAll("category").map((x) => x.toString().trim()).filter(Boolean);
+  if (cats.length) data["Category"] = cats.join(", ");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data["Email"])) {
     return contactResult(url, false, "That email address does not look right.");
   }
@@ -365,7 +377,7 @@ async function handleContact(request, env, url) {
           From: env.FORM_FROM,
           To: env.FORM_TO,
           ReplyTo: data["Email"],
-          Subject: `Contact Form Submission from ${data["Name"]}`,
+          Subject: `Contact Form Submission from ${data["First name"]} ${data["Last name"]}`,
           TextBody: `A message was sent from the website contact form.${NL}${NL}${lines}${NL}`,
           MessageStream: "outbound",
         }),
@@ -394,12 +406,13 @@ async function handleContact(request, env, url) {
   // Never tell someone their message went through when nothing kept it.
   if (!stored && !mailed) {
     return contactResult(url, false,
-      "We could not deliver that just now. Please email info@shinsennafoods.ca directly.");
+      "We could not deliver that just now. Please email info@hons.ca directly.");
   }
   return contactResult(url, true, "", mailed);
 }
 
-function contactResult(url, ok, error) {
+function contactResult(url, ok, error, backPath) {
+  const back = backPath || "/contact-us/";
   const body = ok
     ? `<h2>Thank you &mdash; we have your message</h2>
        <p>Someone will get back to you shortly.</p>`
@@ -414,7 +427,131 @@ function contactResult(url, ok, error) {
       box-shadow:0 1px 3px rgba(0,0,0,.08)}
  h2{font-weight:600;margin:0 0 .6em} a{color:#b3282d}
 </style></head><body><main>${body}
-<p style="margin-top:2em"><a href="${url.origin}/contact/">Back to the contact page</a></p></main></body></html>`,
+<p style="margin-top:2em"><a href="${url.origin}${back}">Back to the site</a></p></main></body></html>`,
     { status: ok ? 200 : 400,
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+// Base64-encode an ArrayBuffer in chunks (btoa on a huge string overflows).
+function toBase64(buf) {
+  const b = new Uint8Array(buf);
+  let s = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < b.length; i += CHUNK) {
+    s += String.fromCharCode.apply(null, b.subarray(i, i + CHUNK));
+  }
+  return btoa(s);
+}
+
+const APPLY_FIELDS = [
+  ["first-name", "First name", true],
+  ["last-name", "Last name", true],
+  ["email", "Email", true],
+  ["phone", "Phone", true],
+];
+const RESUME_MAX = 8 * 1024 * 1024; // 8 MB - Postmark caps a message at 10 MB
+const RESUME_OK = /\.(pdf|docx?|rtf|odt|txt|pages)$/i;
+const APPLY_BACK = "/about/careers/";
+
+// The careers application: like the contact form, but with a required resume
+// file. The file is stored in R2 (kept, in case email delivery fails) and also
+// sent to HR as a Postmark attachment, replacing the WordPress upload handler.
+async function handleApplication(request, env, url) {
+  let f;
+  try {
+    f = await request.formData();
+  } catch (e) {
+    return contactResult(url, false, "That form could not be read.", APPLY_BACK);
+  }
+  if ((f.get("website") || "").toString().trim() !== "") return contactResult(url, true, "", APPLY_BACK);
+
+  const data = {};
+  for (const [name, label, required] of APPLY_FIELDS) {
+    const v = (f.get(name) || "").toString().trim().slice(0, 2000);
+    if (required && !v) return contactResult(url, false, `${label} is required.`, APPLY_BACK);
+    data[label] = v;
+  }
+  const positions = f.getAll("position").map((x) => x.toString().trim()).filter(Boolean);
+  if (positions.length) data["Position"] = positions.join(", ");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data["Email"])) {
+    return contactResult(url, false, "That email address does not look right.", APPLY_BACK);
+  }
+
+  const file = f.get("resume");
+  if (!file || typeof file === "string" || !file.size) {
+    return contactResult(url, false, "Please attach your resume.", APPLY_BACK);
+  }
+  if (!RESUME_OK.test(file.name || "")) {
+    return contactResult(url, false, "Please upload a PDF, Word, RTF or text document.", APPLY_BACK);
+  }
+  if (file.size > RESUME_MAX) {
+    return contactResult(url, false, "That file is too large - please keep it under 8 MB.", APPLY_BACK);
+  }
+
+  const now = new Date();
+  data["Submitted"] = now.toISOString();
+  data["From address"] = request.headers.get("cf-connecting-ip") || "-";
+
+  const buf = await file.arrayBuffer();
+  const safe = (file.name || "resume").replace(/[^A-Za-z0-9._-]/g, "_").slice(-90);
+  const ct = file.type || "application/octet-stream";
+  const rkey = `resumes/${now.toISOString().slice(0, 10)}/${now.getTime()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+
+  // Store the resume first, so a Postmark failure never loses an application.
+  let stored = false;
+  if (env.RESUMES) {
+    try {
+      await env.RESUMES.put(rkey, buf, { httpMetadata: { contentType: ct } });
+      stored = true;
+    } catch (e) { /* the email attachment is the backstop */ }
+  }
+  data["Resume"] = stored ? `${file.name} (${Math.round(file.size / 1024)} KB) -> R2:${rkey}` : `${file.name} (not stored)`;
+
+  const to = env.APPLY_TO || env.FORM_TO;
+  let mailed = false;
+  if (env.POSTMARK_TOKEN && to && env.FORM_FROM) {
+    const lines = Object.entries(data).map(([k, v]) => `${k}: ${v || "-"}`).join(NL);
+    try {
+      const r = await fetch("https://api.postmarkapp.com/email", {
+        method: "POST",
+        headers: {
+          "X-Postmark-Server-Token": env.POSTMARK_TOKEN,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          From: env.FORM_FROM,
+          To: to,
+          ReplyTo: data["Email"],
+          Subject: `Job Application from ${data["First name"]} ${data["Last name"]}`,
+          TextBody: `A job application was submitted on the website.${NL}${NL}${lines}${NL}`,
+          Attachments: [{ Name: file.name || "resume", Content: toBase64(buf), ContentType: ct }],
+          MessageStream: "outbound",
+        }),
+      });
+      mailed = r.ok;
+      data["_delivery"] = { status: r.status, body: (await r.text()).slice(0, 300) };
+    } catch (e) {
+      data["_delivery"] = { status: 0, body: String((e && e.message) || e).slice(0, 300) };
+    }
+  } else {
+    data["_delivery"] = { status: 0, body: "not attempted: " +
+      (env.POSTMARK_TOKEN ? "" : "POSTMARK_TOKEN missing ") +
+      (to ? "" : "APPLY_TO/FORM_TO missing ") + (env.FORM_FROM ? "" : "FORM_FROM missing ") };
+  }
+  data["_delivery"].mailed = mailed;
+
+  // A JSON record of every application, alongside the enquiries.
+  if (env.DATA) {
+    try {
+      const jkey = `applications/${now.toISOString().slice(0, 10)}/${now.getTime()}-${Math.random().toString(36).slice(2, 8)}.json`;
+      await env.DATA.put(jkey, JSON.stringify(data, null, 2), { httpMetadata: { contentType: "application/json" } });
+    } catch (e) { /* the resume + email are the record */ }
+  }
+
+  if (!stored && !mailed) {
+    return contactResult(url, false,
+      "We could not submit that just now. Please email your resume to hr@hons.ca directly.", APPLY_BACK);
+  }
+  return contactResult(url, true, "", APPLY_BACK);
 }
