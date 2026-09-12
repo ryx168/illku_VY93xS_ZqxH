@@ -1,4 +1,4 @@
-// shinsennafoods.ca - static site on Pages, plus the three things that cannot
+// hons.ca - static site on Pages, plus the three things that cannot
 // be static: the media library (R2), the contact form, and the on-demand
 // WordPress editor. In Pages "advanced mode" this file handles every request,
 // so static pages are served explicitly through env.ASSETS.
@@ -224,12 +224,11 @@ export default {
       }
     }
 
-    // /webmail belongs to the mail server (Roundcube on mail.shinsennafoods.ca),
-    // not to this site - it worked on the old host and people have it bookmarked.
-    // 302, not 301: mail hosting in this estate is mid-migration, and a permanent
-    // redirect cached in browsers would be very hard to walk back.
+    // hons.ca mail is on Microsoft 365, so /webmail belongs to Outlook on the
+    // web, not to this site - people have the old bookmark. 302, not 301: a
+    // permanent redirect cached in browsers would be very hard to walk back.
     if (/^\/webmail(\/|$)/i.test(path)) {
-      return Response.redirect("https://mail.shinsennafoods.ca/", 302);
+      return Response.redirect("https://outlook.office.com/mail/", 302);
     }
 
     if (path === "/contact-send") {
