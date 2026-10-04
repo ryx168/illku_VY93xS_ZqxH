@@ -36,6 +36,7 @@ jobs:
       contents: write
     env:
       SITE_HOST: ${{ secrets.SITE_HOST }}
+      FMAUTH_KEY: ${{ secrets.FMAUTH_KEY }}
       EDIT_HOST: ${{ secrets.EDIT_HOST }}
       STATE_BUCKET: ${{ secrets.STATE_BUCKET }}
       MEDIA_BUCKET: ${{ secrets.MEDIA_BUCKET }}
