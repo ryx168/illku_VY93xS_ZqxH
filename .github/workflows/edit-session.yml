@@ -57,6 +57,8 @@ jobs:
 
 
       - name: Restore state and boot WordPress
+        # id so the save step can tell whether the restore actually completed.
+        id: boot
         run: bash tools/wp-boot.sh
 
       - name: Hold the session open
@@ -64,8 +66,14 @@ jobs:
         run: bash tools/wp-session.sh "${{ inputs.idle_minutes }}"
 
       - name: Save state and publish
-        # always() so a cancelled or timed-out session still saves the database.
-        if: always()
+        # always() so a cancelled or timed-out session still saves the database
+        # - but ONLY once the restore has completed. Without the second clause a
+        # failed restore (e.g. a dead CF_API_TOKEN returning 401, 2026-11-19)
+        # still ran this step against a WordPress that never loaded, and a
+        # different failure could have dumped an empty database over the good
+        # db-latest.sql.gz in R2 and republished an empty site. outcome (not
+        # conclusion) so a restore cancelled part-way also skips the save.
+        if: ${{ always() && steps.boot.outcome == 'success' }}
         run: bash tools/wp-save.sh "${{ inputs.export_only }}"
 
       - name: Upload the export for inspection
