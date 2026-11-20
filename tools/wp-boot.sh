@@ -149,6 +149,39 @@ $stop_editor_css = function () {
 };
 add_action('wp_head', $stop_editor_css);
 add_action('admin_head', $stop_editor_css);
+
+// The same stop, from the LOGIN page, for when nobody is signed in. Because
+// anyone can reach this page, a stop here needs a real administrator's
+// username and password (checked by WordPress itself) - a visitor or scanner
+// pressing the button without credentials ends nothing.
+add_action('login_footer', function () {
+    if (!isset($_GET['stop_editor'])) {
+        echo '<p style="text-align:center;margin-top:18px"><a href="' . esc_url(add_query_arg('stop_editor', '1', wp_login_url())) . '#stop-editor" '
+           . 'style="color:#b32d2e">Done editing? Stop the editor &amp; save</a></p>';
+        return;
+    }
+    echo '<form id="stop-editor" method="post" action="' . esc_url(admin_url('admin-post.php')) . '" '
+       . 'style="max-width:320px;margin:18px auto;padding:20px;background:#fff;border:1px solid #c3c4c7;box-shadow:0 1px 3px rgba(0,0,0,.04)">'
+       . '<input type="hidden" name="action" value="stop_editor_login">'
+       . '<p style="margin:0 0 10px;color:#1d2327"><strong>Stop the editor and save</strong><br>Sign in once more to confirm. Your changes are saved and the public site is republished.</p>'
+       . '<p><label>Username or email<br><input type="text" name="log" autocomplete="username" style="width:100%"></label></p>'
+       . '<p><label>Password<br><input type="password" name="pwd" autocomplete="current-password" style="width:100%"></label></p>'
+       . '<p><button type="submit" style="background:#b32d2e;color:#fff;border:0;padding:9px 16px;border-radius:3px;cursor:pointer;font-size:14px">Stop editor &amp; save</button></p>'
+       . '</form>';
+});
+add_action('admin_post_nopriv_stop_editor_login', function () {
+    $u = wp_authenticate(isset($_POST['log']) ? wp_unslash($_POST['log']) : '', isset($_POST['pwd']) ? wp_unslash($_POST['pwd']) : '');
+    if (is_wp_error($u) || !user_can($u, 'manage_options')) {
+        wp_die('<h1>Not stopped</h1><p>That username and password did not match an administrator. Nothing was changed.</p>', 'Not stopped', array('response' => 403, 'back_link' => true));
+    }
+    @file_put_contents('/tmp/stop-editor', gmdate('c'));
+    wp_die(
+        '<h1>Saving and shutting down</h1><p>Your changes are being saved and the public site is being republished. '
+        . 'This takes a few minutes. You can close this tab; the editor will be offline when it finishes.</p>',
+        'Stopping the editor',
+        array('response' => 200)
+    );
+});
 PHP
 # WP Rocket caches to disk; on a disposable runner that is pure noise and can
 # serve stale pages into the export.
