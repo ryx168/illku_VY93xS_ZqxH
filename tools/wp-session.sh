@@ -99,9 +99,19 @@ autosave_every=300      # 5 minutes - a runner can die with no usable hook,
                         # so never rely on saving only at shutdown
 since_save=0
 
+rm -f /tmp/stop-editor
 while true; do
-  sleep 30
+  # Wake every 5 s instead of sleeping 30 so the admin-bar "Stop editor & save"
+  # button (00-stop-editor.php writes /tmp/stop-editor) takes effect within seconds.
+  for _ in 1 2 3 4 5 6; do
+    [ -f /tmp/stop-editor ] && break
+    sleep 5
+  done
   elapsed=$((elapsed + 30))
+  if [ -f /tmp/stop-editor ]; then
+    echo "stopped from the admin bar - closing the session"
+    break
+  fi
   since_save=$((since_save + 30))
 
   hits=$(admin_hits)
