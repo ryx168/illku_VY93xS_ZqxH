@@ -101,13 +101,29 @@ const WAITING = `
   <h1><span class="spin"></span>Starting the editor</h1>
   <p>This usually takes a minute or two. The login page will open by itself.</p>
   <script>
-    (function poll(){
-      fetch('/__editor-status',{cache:'no-store'})
-        .then(r=>r.json())
-        .then(d=>{ if(d.ready){ location.href='/wp-admin/'; } else { setTimeout(poll,5000); } })
-        .catch(()=>setTimeout(poll,5000));
+    (function(){
+      var t0=Date.now();
+      function tick(){
+        if(Date.now()-t0>300000){
+          var b=document.querySelector('.box');
+          if(b) b.innerHTML='<h1>The editor is taking too long to start</h1><p>It did not come up within 5 minutes. Please try again in a moment; if it keeps happening, tell the site owner.</p>';
+          return;
+        }
+        fetch('/__editor-status',{cache:'no-store'})
+          .then(function(r){return r.json();})
+          .then(function(d){ if(d.ready){ location.href='/wp-admin/'; } else { setTimeout(tick,5000); } })
+          .catch(function(){setTimeout(tick,5000);});
+      }
+      tick();
     })();
   </script>`;
+
+// Shown instead of the waiting page when the editor could not be started.
+function failMsg(why) {
+  return `<h1>The editor could not be started</h1>
+  <p>${why}. Nothing is running, so waiting will not help.
+     Please tell the site owner, who can fix this in a few minutes.</p>`;
+}
 
 
 const TZ = "America/Vancouver";
@@ -268,8 +284,24 @@ export default {
     // GET must never be treated as consent: scanners walk /wp-admin constantly.
     if (path === "/__editor-start") {
       if (request.method !== "POST") return Response.redirect(`${url.origin}/wp-admin/`, 303);
-      if (looksLikeAPerson(request) && env.GH_TOKEN) {
-        if (!(await sessionRunning(env))) await startSession(env);
+      if (looksLikeAPerson(request)) {
+        // Never show "Starting..." for a start that did not happen. Before this the
+        // GitHub reply was ignored, so an expired token left visitors watching a
+        // spinner forever while nothing was running.
+        if (!env.GH_TOKEN) return page("Editor unavailable", failMsg("the start key is not configured"), 503);
+        try {
+          if (!(await sessionRunning(env))) {
+            const r = await startSession(env);
+            if (!r.ok) {
+              const why = r.status === 401 ? "GitHub rejected the start key (expired or invalid)"
+                : (r.status === 403 || r.status === 404) ? "the start key has no access to the editor workflow"
+                : "GitHub refused the request";
+              return page("Editor unavailable", failMsg(why + " [" + r.status + "]"), 503);
+            }
+          }
+        } catch (e) {
+          return page("Editor unavailable", failMsg("could not reach GitHub"), 503);
+        }
       }
       return page("Starting the editor", WAITING);
     }
