@@ -116,6 +116,40 @@ add_action('phpmailer_init', function ($m) {
     if ($from) { $m->setFrom($from, get_bloginfo('name'), false); }
 });
 PHP
+# "Stop editor & save" button in the admin bar. Ends THIS session the clean way:
+# it drops a flag file, wp-session.sh sees it within seconds, stops holding the
+# session open, and the normal save step then saves the database and
+# republishes the site (the same path as the idle timeout, just sooner).
+# Admins only, and behind a nonce so a stray link cannot end someone's session.
+cat > wp-content/mu-plugins/00-stop-editor.php <<'PHP'
+<?php
+add_action('admin_bar_menu', function ($bar) {
+    if (!current_user_can('manage_options')) { return; }
+    $bar->add_node(array(
+        'id'    => 'stop-editor',
+        'title' => 'Stop editor &amp; save',
+        'href'  => wp_nonce_url(admin_url('admin-post.php?action=stop_editor_session'), 'stop_editor_session'),
+        'meta'  => array('onclick' => "return confirm('Save your changes, publish the site and shut the editor down?');"),
+    ));
+}, 100);
+add_action('admin_post_stop_editor_session', function () {
+    if (!current_user_can('manage_options')) { wp_die('Not allowed.', 'Not allowed', array('response' => 403)); }
+    check_admin_referer('stop_editor_session');
+    @file_put_contents('/tmp/stop-editor', gmdate('c'));
+    wp_die(
+        '<h1>Saving and shutting down</h1><p>Your changes are being saved and the public site is being republished. '
+        . 'This takes a few minutes. You can close this tab; the editor will be offline when it finishes.</p>',
+        'Stopping the editor',
+        array('response' => 200)
+    );
+});
+$stop_editor_css = function () {
+    echo '<style>#wpadminbar #wp-admin-bar-stop-editor>.ab-item{background:#b32d2e;color:#fff}'
+       . '#wpadminbar #wp-admin-bar-stop-editor:hover>.ab-item{background:#8a2424;color:#fff}</style>';
+};
+add_action('wp_head', $stop_editor_css);
+add_action('admin_head', $stop_editor_css);
+PHP
 # WP Rocket caches to disk; on a disposable runner that is pure noise and can
 # serve stale pages into the export.
 if [ -d wp-content/plugins/wp-rocket ]; then
